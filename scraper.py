@@ -1,24 +1,65 @@
-# This is a template for a Python scraper on morph.io (https://morph.io)
-# including some code snippets below that you should find helpful
-
-import scraperwiki
+# Blank Python
 import lxml.html
+import scraperwiki, datetime
+from urlparse import urljoin
 
-# Read in a page
-html = scraperwiki.scrape("https://jsonlint.com/")
+base="http://www.mkogy.hu/hivatal/uveg/"
 
-# Find something on the page using css selectors
-root = lxml.html.fromstring(html)
-root.cssselect("#__next > div > main > main > h1")
+def toDate(node):
+    text=''.join([x.strip() for x in node.xpath(".//text()") if x.strip()]).replace(u"\u00A0",' ').strip()
+    if text is None or not len(text): return
+    lines=text.split('\n')
+    if len(lines)>1:
+        result=[]
+        for text in lines:
+            value=[int(x) for x in text.strip().split('.') if x]
+            result.append(datetime.date(value[0], value[1], value[2]))
+        return result
+    else:
+        value=[int(x) for x in text.strip().split('.') if x]
+        return datetime.date(value[0], value[1], value[2])
 
-# Write out to the sqlite database using scraperwiki library
-scraperwiki.sqlite.save(unique_keys=['name'], data={"name": "susan", "occupation": "software developer"})
+def toText(node):
+    if node is None: return ''
+    return ''.join([x.strip() for x in node.xpath(".//text()") if x.strip()]).replace(u"\u00A0",' ').strip()
 
-# An arbitrary query against the database
-scraperwiki.sql.select("* from data where 'name'='peter'")
+def convertRow(cells,fields):
+    res={}
+    if not len(cells)==len(fields): return None
+    for i,cell in enumerate(cells):
+        tmp=fields[i][1](cell)
+        if tmp: res[fields[i][0]]=tmp
+    return res
 
-# You don't have to do things with the ScraperWiki and lxml libraries.
-# You can use whatever libraries you want: https://morph.io/documentation/python
-# All that matters is that your final data is written to an SQLite database
-# called "data.sqlite" in the current working directory which has at least a table
-# called "data".
+def toObj(table,fields):
+    res=[]
+    for row in table.xpath('tr')[1:]:
+        items=row.xpath('td')
+        value=convertRow(items,fields)
+        if value:
+            res.append(value)
+    return res
+
+Fields=( ('Azonosito', toText),
+         ('Szerzodes vagy modositas datuma', toDate),
+         ('Modositas sorszama', toText),
+         ('Modositas oka', toText),
+         ('Targy', toText),
+         ('Tipus', toText),
+         ('Szallitasi mod', toText),
+         ('Megrendelo fel', toText),
+         ('Megrendelo Alairo', toText),
+         ('Szallito fel', toText),
+         ('Szallito Alairo', toText),
+         ('ertek', toText),
+         ('Tel', toDate),
+         ('Ig',toDate)
+         )
+
+
+html = scraperwiki.scrape("http://www.mkogy.hu/hivatal/uveg/uvegzseb.htm")
+tree = lxml.html.fromstring(html)
+
+table=tree.xpath('//table')[0]
+for obj in toObj(table,Fields):
+    scraperwiki.sqlite.save(unique_keys=['Azonosito'], data=obj)
